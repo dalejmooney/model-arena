@@ -1,18 +1,22 @@
-"""One prompt, every model, answers side by side.
+"""One prompt, every model, answers side by side with what each one cost.
 
-Nothing is streamed to the terminal any more, and that is a deliberate trade. Four
-streams interleaved into one terminal is unreadable, so the text is collected and
-printed in blocks. The streaming underneath still matters: it is what lets a slow
-model be slow without blocking anyone else, and it is what the web view in a later
-rung will actually surface.
+Nothing is streamed to the terminal, and that is a deliberate trade. Four streams
+interleaved into one terminal is unreadable, so the text is collected and printed
+in blocks. The streaming underneath still matters: it is what lets a slow model be
+slow without blocking anyone else, and it is what the web view in a later rung will
+surface.
 """
 
 import argparse
 import asyncio
 import sys
+from datetime import date
 
 from model_arena.arena import Result, run_many
+from model_arena.pricing import CHECKED, CURRENCY, estimate
 from model_arena.providers import PROVIDERS
+
+RULE = "=" * 74
 
 
 def main() -> None:
@@ -48,24 +52,52 @@ def main() -> None:
 
     print(f"> {prompt}\n")
     results = asyncio.run(run_many(references, prompt, max_tokens=args.max_tokens))
-    report(results)
+    report(results, date.today())
 
 
-def report(results: list[Result]) -> None:
+def money(amount: float) -> str:
+    """Six decimal places because a single cheap call rounds to zero at two.
+
+    Showing $0.00 for something that cost money is the same lie as showing $0.00
+    for something whose price we do not know, and this program is largely about
+    not telling that particular lie.
+    """
+    return f"${amount:.6f}"
+
+
+def report(results: list[Result], on: date) -> None:
     for result in results:
-        print(f"{'=' * 70}\n{result.label}  ({result.seconds:.1f}s)\n{'=' * 70}")
-        if result.ok:
-            tokens = f"in={result.usage.input_tokens} out={result.usage.output_tokens}"
-            print(f"{tokens}\n\n{result.text.strip()}\n")
-        else:
+        print(f"{RULE}\n{result.label}  ({result.seconds:.1f}s)\n{RULE}")
+        if not result.ok:
             print(f"FAILED  {result.error}\n")
+            continue
+        spend = estimate(result.model, result.usage, on)
+        priced = money(spend) if spend is not None else "price unknown"
+        print(
+            f"in={result.usage.input_tokens} "
+            f"out={result.usage.output_tokens}  {priced}\n\n{result.text.strip()}\n"
+        )
 
+    summary(results, on)
+
+
+def summary(results: list[Result], on: date) -> None:
     answered = [result for result in results if result.ok]
     slowest = max((result.seconds for result in results), default=0.0)
-    total = sum(result.seconds for result in results)
+    sequential = sum(result.seconds for result in results)
 
-    print("=" * 70)
+    spends = {result.label: estimate(result.model, result.usage, on) for result in answered}
+    unpriced = sorted(label for label, spend in spends.items() if spend is None)
+    total = sum(spend for spend in spends.values() if spend is not None)
+
+    print(RULE)
     print(f"{len(answered)}/{len(results)} answered in {slowest:.1f}s")
-    # The saving is the entire point of the rung, so it gets printed every run.
-    if total > 0:
-        print(f"one at a time would have taken {total:.1f}s")
+    if sequential > 0:
+        print(f"one at a time would have taken {sequential:.1f}s")
+
+    print(f"total {money(total)} {CURRENCY}, prices checked {CHECKED}")
+    # The total is only the sum of what could be priced, so anything left out has
+    # to be named. A total that silently omits a row is a wrong total, and the
+    # reader has no way to tell from the number itself.
+    if unpriced:
+        print(f"excludes {len(unpriced)} unpriced: {', '.join(unpriced)}")

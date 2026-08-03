@@ -14,11 +14,11 @@ Early. Four providers stream behind one interface. Built in the open as I go.
 - Asks them all at once, so adding a model costs no extra wall-clock time
 - Streams over raw HTTP rather than four vendor SDKs
 - Normalised token counts, whichever of the four ways a provider reports them
+- Cost per call, with an unknown price reported as unknown rather than as zero
 - One provider failing is a row in the table, not the end of the run
 
 ## What it will do
 
-- Cost accounting per call and per model
 - Every run saved, so two models can be diffed on the same prompt later
 - A web view worth actually looking at
 
@@ -132,6 +132,46 @@ notice:
 The concurrency claim is measured, not assumed: `tests/test_arena.py` uses
 `httpx.MockTransport` to build a fake network with per-provider delays, so it can
 prove the calls really do overlap without ever leaving the machine.
+
+### Putting a price on it
+
+The same one-sentence question, asked of all four:
+
+| Provider | Model | In | Out | Cost |
+|---|---|---:|---:|---:|
+| groq | llama-3.3-70b-versatile | 46 | 50 | $0.000067 |
+| anthropic | claude-sonnet-5 | 21 | 55 | $0.000592 |
+| openai | gpt-5 | 17 | 107 | $0.001091 |
+| gemini | gemini-3.6-flash | 11 | 452 | $0.003406 |
+
+**Fifty-one times the price for the same sentence.** Four equally good answers,
+and the spread is almost entirely reasoning you pay for and never see. Google's
+pricing page is explicit that output is billed "including thinking tokens", which
+is why the Gemini parser adds `thoughtsTokenCount` to `candidatesTokenCount`. The
+billing definition and the parsing decision have to agree or the total is fiction.
+
+**An unknown price is never zero.** A model missing from the table reports `price
+unknown`, and the run total names what it left out:
+
+```
+total $0.000287 USD, prices checked 2026-08-03
+excludes 1 unpriced: gemini:gemini-3.1-flash-lite
+```
+
+A comparison table that quietly shows $0.00 for the one model nobody priced is
+worse than one that shows nothing, because the reader cannot tell from the number
+that anything is missing. Same failure as the token bug, one layer up.
+
+Promotional rates get the same treatment. Claude Sonnet 5's introductory price
+ends on 31 August 2026, so the entry carries that date and **lapses into unknown
+rather than staying wrong**. A stale price is indistinguishable from a current one
+at the moment you read the total, which is exactly too late.
+
+Two honesty notes. The function is called `estimate`, not `cost`, because it is
+arithmetic over a table somebody typed rather than a figure from an invoice.
+Nothing here has been reconciled against a real bill yet. And money is printed to
+six decimal places, because at two a real call rounds to $0.00, which is the same
+lie in different clothing.
 
 ## Running it
 
