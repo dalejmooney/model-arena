@@ -13,7 +13,7 @@ import sys
 from datetime import UTC, date, datetime
 
 from model_arena import storage
-from model_arena.arena import Result, run_many
+from model_arena.arena import Result, price, run_many
 from model_arena.pricing import CHECKED, CURRENCY, estimate
 from model_arena.providers import PROVIDERS
 
@@ -49,9 +49,18 @@ def main() -> None:
     parser.add_argument("--history", action="store_true", help="list recent saved runs")
     parser.add_argument("--show", type=int, metavar="ID", help="reprint a saved run")
     parser.add_argument("--no-save", action="store_true", help="do not record this run")
+    parser.add_argument("--serve", action="store_true", help="browse saved runs in a browser")
+    parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
 
     today = date.today()
+
+    if args.serve:
+        from model_arena.web import serve
+
+        print(f"http://127.0.0.1:{args.port}")
+        serve(port=args.port)
+        return
 
     if args.history:
         show_history()
@@ -118,10 +127,7 @@ def summary(results: list[Result], on: date) -> None:
     answered = [result for result in results if result.ok]
     slowest = max((result.seconds for result in results), default=0.0)
     sequential = sum(result.seconds for result in results)
-
-    spends = {result.label: estimate(result.model, result.usage, on) for result in answered}
-    unpriced = sorted(label for label, spend in spends.items() if spend is None)
-    total = sum(spend for spend in spends.values() if spend is not None)
+    _, total, unpriced = price(results, on)
 
     print(RULE)
     print(f"{len(answered)}/{len(results)} answered in {slowest:.1f}s")

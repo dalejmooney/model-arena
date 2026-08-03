@@ -16,11 +16,12 @@ Early. Four providers stream behind one interface. Built in the open as I go.
 - Normalised token counts, whichever of the four ways a provider reports them
 - Cost per call, with an unknown price reported as unknown rather than as zero
 - Every run saved to SQLite, storing tokens rather than money so history can be repriced
+- A web view of past runs, repriced at today's rates every time you load it
 - One provider failing is a row in the table, not the end of the run
 
 ## What it will do
 
-- A web view worth actually looking at
+- Ship free on the site
 
 ## Providers
 
@@ -197,6 +198,31 @@ never let a derived number harden into a fact.
 Failed providers are saved too. "Groq was down on Tuesday" is a fact about Groq,
 and keeping only the successes rewrites history into one where everything always
 worked, which is the least useful history to have.
+
+### Looking at it
+
+```bash
+model-arena --serve        # http://127.0.0.1:8000
+```
+
+FastAPI, read only, bound to localhost because it is somebody's own history. The
+terminal runs comparisons; this reads what they produced. A "run it now" button
+would mean holding four streams open across a request, which is a different problem
+from displaying a result.
+
+Each answer gets a bar sized against the dearest one in the run, which is what makes
+a fiftyfold spread legible at a glance rather than something you work out from
+digits. Pages are priced at request time from stored tokens, so they move when
+prices move. That is the whole reason the database has no cost column.
+
+**Everything on those pages came out of a language model**, so escaping is the main
+thing `render.py` does. "Write me a hello world page" is an ordinary prompt and its
+answer contains real tags; rendered raw, a model would be scripting the page that
+displays it, and the person who typed the prompt would be the one running it. The
+HTML is hand written rather than templated specifically to keep that in plain sight
+instead of trusting a template engine's autoescaping to be switched on, and there is
+a test that feeds a script tag through a model answer and checks it comes back
+inert.
 
 ## Running it
 

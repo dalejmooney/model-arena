@@ -26,10 +26,12 @@ Two decisions worth keeping:
 import asyncio
 import time
 from dataclasses import dataclass, field
+from datetime import date
 
 import httpx
 
 from model_arena.events import Usage
+from model_arena.pricing import estimate
 from model_arena.providers import Provider, collect, resolve
 from model_arena.providers.base import DEFAULT_MAX_TOKENS, DEFAULT_TIMEOUT
 
@@ -52,6 +54,30 @@ class Result:
     @property
     def label(self) -> str:
         return f"{self.provider}:{self.model}"
+
+
+@dataclass(frozen=True)
+class Priced:
+    """A result and what it cost, where `spend` of None means the price is unknown."""
+
+    result: Result
+    spend: float | None
+
+
+def price(results: list[Result], on: date) -> tuple[list[Priced], float, list[str]]:
+    """Value a set of results, returning the rows, the total, and what was left out.
+
+    Shared by the terminal and the web view rather than written twice, because the
+    rule that an unknown price is never zero is only useful if every surface obeys
+    it. Two implementations is one implementation and one future bug.
+    """
+    rows = [
+        Priced(result, estimate(result.model, result.usage, on) if result.ok else None)
+        for result in results
+    ]
+    total = sum(row.spend for row in rows if row.spend is not None)
+    unpriced = sorted(row.result.label for row in rows if row.result.ok and row.spend is None)
+    return rows, total, unpriced
 
 
 async def run_one(
