@@ -1,9 +1,20 @@
 [project]
 name = "model-arena"
 version = "0.1.0"
-description = "Add your description here"
+description = "Run one prompt across every model at once and compare the answers, tokens and real cost."
 readme = "README.md"
 requires-python = ">=3.13"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Dale Mooney" }]
+keywords = ["llm", "anthropic", "openai", "gemini", "groq", "benchmark", "cost"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+]
 dependencies = [
     "fastapi>=0.141.1",
     "httpx>=0.28.1",
@@ -11,6 +22,10 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "uvicorn>=0.52.1",
 ]
+
+[project.urls]
+Repository = "https://github.com/dalejmooney/model-arena"
+Findings = "https://github.com/dalejmooney/model-arena/blob/main/FINDINGS.md"
 
 [project.scripts]
 model-arena = "model_arena.cli:main"
@@ -22,8 +37,10 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "mypy>=2.3.0",
+    "pip>=26.2",
     "pytest>=9.1.1",
     "ruff>=0.16.1",
+    "uv>=0.12.1",
 ]
 
 # ---- tooling ----------------------------------------------------------------
