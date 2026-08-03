@@ -10,8 +10,9 @@ surface.
 import argparse
 import asyncio
 import sys
-from datetime import date
+from datetime import UTC, date, datetime
 
+from model_arena import storage
 from model_arena.arena import Result, run_many
 from model_arena.pricing import CHECKED, CURRENCY, estimate
 from model_arena.providers import PROVIDERS
@@ -45,14 +46,46 @@ def main() -> None:
         ),
     )
     parser.add_argument("--max-tokens", type=int, default=1024)
+    parser.add_argument("--history", action="store_true", help="list recent saved runs")
+    parser.add_argument("--show", type=int, metavar="ID", help="reprint a saved run")
+    parser.add_argument("--no-save", action="store_true", help="do not record this run")
     args = parser.parse_args()
+
+    today = date.today()
+
+    if args.history:
+        show_history()
+        return
+
+    if args.show is not None:
+        show_run(args.show, today)
+        return
 
     references = args.models or sorted(PROVIDERS)
     prompt = " ".join(args.prompt) or "In two sentences, what is a Server-Sent Event?"
 
     print(f"> {prompt}\n")
+    started_at = datetime.now(UTC)
     results = asyncio.run(run_many(references, prompt, max_tokens=args.max_tokens))
-    report(results, date.today())
+    report(results, today)
+
+    if not args.no_save:
+        record(prompt, args.max_tokens, results, started_at)
+
+
+def record(prompt: str, max_tokens: int, results: list[Result], started_at: datetime) -> None:
+    """Save the run, but never lose it to a failure to save it.
+
+    The answers have already been paid for by the time we get here. Letting a locked
+    database or a full disk take them down with it would be a poor trade, so the
+    failure is reported and the results stay on screen.
+    """
+    try:
+        run_id = storage.save(prompt, max_tokens, results, started_at)
+    except OSError as error:
+        print(f"\nnot saved: {error}")
+        return
+    print(f"saved as run {run_id}")
 
 
 def money(amount: float) -> str:
@@ -101,3 +134,27 @@ def summary(results: list[Result], on: date) -> None:
     # reader has no way to tell from the number itself.
     if unpriced:
         print(f"excludes {len(unpriced)} unpriced: {', '.join(unpriced)}")
+
+
+def show_history() -> None:
+    runs = storage.recent()
+    if not runs:
+        print("no runs saved yet")
+        return
+    for run in runs:
+        when = run.started_at.strftime("%Y-%m-%d %H:%M")
+        prompt = run.prompt if len(run.prompt) <= 56 else run.prompt[:53] + "..."
+        print(f"{run.id:>5}  {when}  {prompt}")
+
+
+def show_run(run_id: int, on: date) -> None:
+    run = storage.load(run_id)
+    if run is None:
+        print(f"no run {run_id}")
+        return
+    # Repriced at today's rates rather than whatever was shown on the day, which is
+    # the entire reason usage is stored and cost is not. If a price has moved since,
+    # this total moves with it instead of preserving a figure that stopped being true.
+    print(f"run {run.id}  {run.started_at.strftime('%Y-%m-%d %H:%M')} UTC")
+    print(f"> {run.prompt}\n")
+    report(run.results, on)

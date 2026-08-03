@@ -15,11 +15,11 @@ Early. Four providers stream behind one interface. Built in the open as I go.
 - Streams over raw HTTP rather than four vendor SDKs
 - Normalised token counts, whichever of the four ways a provider reports them
 - Cost per call, with an unknown price reported as unknown rather than as zero
+- Every run saved to SQLite, storing tokens rather than money so history can be repriced
 - One provider failing is a row in the table, not the end of the run
 
 ## What it will do
 
-- Every run saved, so two models can be diffed on the same prompt later
 - A web view worth actually looking at
 
 ## Providers
@@ -172,6 +172,31 @@ arithmetic over a table somebody typed rather than a figure from an invoice.
 Nothing here has been reconciled against a real bill yet. And money is printed to
 six decimal places, because at two a real call rounds to $0.00, which is the same
 lie in different clothing.
+
+### Keeping runs
+
+Every run is saved to SQLite at `~/.model-arena/runs.db`.
+
+```bash
+model-arena --history      # recent runs
+model-arena --show 12      # reprint one, repriced at today's rates
+model-arena --no-save ...  # don't record this one
+```
+
+**The schema stores tokens and deliberately has no cost column**, and there is a
+test asserting that rather than just a comment. Tokens are what the provider
+reported and they never change. A price is a number off a web page somebody else
+edits, and Sonnet 5's rate is already scheduled to move on 31 August. Store the
+money and last month's history quietly becomes a set of figures that were true
+once, with nothing marking which. Store the tokens and any run can be repriced,
+which is exactly what `--show` does.
+
+Same rule as everywhere else here: keep the measurement, derive the valuation, and
+never let a derived number harden into a fact.
+
+Failed providers are saved too. "Groq was down on Tuesday" is a fact about Groq,
+and keeping only the successes rewrites history into one where everything always
+worked, which is the least useful history to have.
 
 ## Running it
 
