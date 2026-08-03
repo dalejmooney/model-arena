@@ -1,8 +1,13 @@
-"""Smallest possible way to see the stream actually working."""
+"""Smallest possible way to see one provider's stream actually working.
 
+Still one model at a time. Running four at once is the next step and wants asyncio,
+which is a different problem from talking to four APIs correctly.
+"""
+
+import argparse
 import sys
 
-from model_arena.anthropic import stream_text
+from model_arena.providers import PROVIDERS, resolve, stream_events
 
 
 def main() -> None:
@@ -17,13 +22,26 @@ def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
 
-    prompt = " ".join(sys.argv[1:]) or "In two sentences, what is a Server-Sent Event?"
-    print(f"> {prompt}\n")
+    parser = argparse.ArgumentParser(prog="model-arena", description=__doc__)
+    parser.add_argument("prompt", nargs="*", default=[])
+    parser.add_argument(
+        "-m",
+        "--model",
+        default="anthropic",
+        metavar="PROVIDER[:MODEL]",
+        help=f"one of {', '.join(sorted(PROVIDERS))}, optionally with a model id",
+    )
+    args = parser.parse_args()
 
-    for chunk in stream_text(prompt):
-        # end="" because the chunks are fragments of one sentence, not lines.
-        # flush=True because stdout buffers when it is not a terminal, and without
-        # it the whole point of streaming disappears the moment you pipe the output.
-        print(chunk, end="", flush=True)
+    provider, model = resolve(args.model)
+    prompt = " ".join(args.prompt) or "In two sentences, what is a Server-Sent Event?"
+    print(f"[{provider.name} {model}]\n> {prompt}\n")
+
+    for chunk in stream_events(provider, prompt, model):
+        if isinstance(chunk, str):
+            # end="" because the chunks are fragments of one sentence, not lines.
+            # flush=True because stdout buffers when it is not a terminal, and without
+            # it the whole point of streaming disappears the moment you pipe the output.
+            print(chunk, end="", flush=True)
 
     print()
