@@ -11,12 +11,13 @@ Early. Four providers stream behind one interface. Built in the open as I go.
 ## What it does so far
 
 - Anthropic, OpenAI, Gemini and Groq, all through one `Provider` interface
-- Streams tokens as they arrive, over raw HTTP rather than four vendor SDKs
+- Asks them all at once, so adding a model costs no extra wall-clock time
+- Streams over raw HTTP rather than four vendor SDKs
 - Normalised token counts, whichever of the four ways a provider reports them
+- One provider failing is a row in the table, not the end of the run
 
 ## What it will do
 
-- Concurrent calls, so adding a model does not add latency
 - Cost accounting per call and per model
 - Every run saved, so two models can be diffed on the same prompt later
 - A web view worth actually looking at
@@ -24,8 +25,9 @@ Early. Four providers stream behind one interface. Built in the open as I go.
 ## Providers
 
 ```bash
-model-arena --model anthropic "why is the sky blue?"
-model-arena --model openai:gpt-5 "why is the sky blue?"
+model-arena "why is the sky blue?"                        # all four at once
+model-arena --model anthropic --model groq "why is..."    # pick a subset
+model-arena --model openai:gpt-5 "why is the sky blue?"   # pin a model
 ```
 
 `--model` takes `provider` or `provider:model`. A bare provider name uses its
@@ -96,6 +98,40 @@ real numbers.
 The general point, which is why this project exists: a per-token price is not a
 price. What a model actually costs depends on how much it thinks before answering,
 that varies per call, and at least two of these four will quietly not tell you.
+
+It gets worse with a real question. Asked to explain Server-Sent Events in one
+sentence, every model produced roughly thirty words, and Gemini spent **476 output
+tokens** getting there against Groq's 57. The answers were about equally good.
+
+### Asking them all at once
+
+Waiting is almost all of what this program does, so the waiting overlaps:
+
+```
+4/4 answered in 5.1s
+one at a time would have taken 14.4s
+```
+
+That is the honest case for asyncio here rather than threads: there is no CPU work
+to speak of, just four sockets idle most of the time. Only the transport is async.
+`request()` and `parse()` stay ordinary functions because neither waits for
+anything, and the useful discipline of async is being able to point at every place
+that actually blocks.
+
+Two behaviours are pinned by tests because they are easy to get wrong and hard to
+notice:
+
+- **A failed provider is a result, not an exception.** If Groq is down that belongs
+  in the table next to the models that answered. Letting it propagate would cancel
+  three calls that were working, and a comparison tool that shows nothing whenever
+  one competitor has a bad day is not much of a comparison tool.
+- **Results come back in the order asked for**, not the order they finished, or the
+  fast models quietly sort themselves to the top of every run and the table becomes
+  a leaderboard for the one axis that is easiest to measure.
+
+The concurrency claim is measured, not assumed: `tests/test_arena.py` uses
+`httpx.MockTransport` to build a fake network with per-provider delays, so it can
+prove the calls really do overlap without ever leaving the machine.
 
 ## Running it
 

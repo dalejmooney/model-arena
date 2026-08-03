@@ -1,20 +1,25 @@
-"""Smallest possible way to see one provider's stream actually working.
+"""One prompt, every model, answers side by side.
 
-Still one model at a time. Running four at once is the next step and wants asyncio,
-which is a different problem from talking to four APIs correctly.
+Nothing is streamed to the terminal any more, and that is a deliberate trade. Four
+streams interleaved into one terminal is unreadable, so the text is collected and
+printed in blocks. The streaming underneath still matters: it is what lets a slow
+model be slow without blocking anyone else, and it is what the web view in a later
+rung will actually surface.
 """
 
 import argparse
+import asyncio
 import sys
 
-from model_arena.providers import PROVIDERS, resolve, stream_events
+from model_arena.arena import Result, run_many
+from model_arena.providers import PROVIDERS
 
 
 def main() -> None:
     # On Windows, stdout defaults to the system codepage (cp1252 here), which cannot
     # represent arrows, CJK, emoji or most mathematical notation. Printing one raises
-    # UnicodeEncodeError and kills the process partway through the stream. Model output
-    # is arbitrary text from anywhere, so this is not an edge case, it is Tuesday.
+    # UnicodeEncodeError and kills the process partway through. Model output is
+    # arbitrary text from anywhere, so this is not an edge case, it is Tuesday.
     #
     # Deliberately no errors="replace". That would stop the crash by silently swapping
     # characters for question marks, which turns a loud failure into a quiet corruption.
@@ -27,21 +32,40 @@ def main() -> None:
     parser.add_argument(
         "-m",
         "--model",
-        default="anthropic",
+        action="append",
+        dest="models",
         metavar="PROVIDER[:MODEL]",
-        help=f"one of {', '.join(sorted(PROVIDERS))}, optionally with a model id",
+        help=(
+            f"repeatable. One of {', '.join(sorted(PROVIDERS))}, optionally with a "
+            "model id. Defaults to every provider."
+        ),
     )
+    parser.add_argument("--max-tokens", type=int, default=1024)
     args = parser.parse_args()
 
-    provider, model = resolve(args.model)
+    references = args.models or sorted(PROVIDERS)
     prompt = " ".join(args.prompt) or "In two sentences, what is a Server-Sent Event?"
-    print(f"[{provider.name} {model}]\n> {prompt}\n")
 
-    for chunk in stream_events(provider, prompt, model):
-        if isinstance(chunk, str):
-            # end="" because the chunks are fragments of one sentence, not lines.
-            # flush=True because stdout buffers when it is not a terminal, and without
-            # it the whole point of streaming disappears the moment you pipe the output.
-            print(chunk, end="", flush=True)
+    print(f"> {prompt}\n")
+    results = asyncio.run(run_many(references, prompt, max_tokens=args.max_tokens))
+    report(results)
 
-    print()
+
+def report(results: list[Result]) -> None:
+    for result in results:
+        print(f"{'=' * 70}\n{result.label}  ({result.seconds:.1f}s)\n{'=' * 70}")
+        if result.ok:
+            tokens = f"in={result.usage.input_tokens} out={result.usage.output_tokens}"
+            print(f"{tokens}\n\n{result.text.strip()}\n")
+        else:
+            print(f"FAILED  {result.error}\n")
+
+    answered = [result for result in results if result.ok]
+    slowest = max((result.seconds for result in results), default=0.0)
+    total = sum(result.seconds for result in results)
+
+    print("=" * 70)
+    print(f"{len(answered)}/{len(results)} answered in {slowest:.1f}s")
+    # The saving is the entire point of the rung, so it gets printed every run.
+    if total > 0:
+        print(f"one at a time would have taken {total:.1f}s")

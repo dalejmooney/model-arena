@@ -9,6 +9,12 @@ So that is the seam. `Provider` supplies those three, `stream_events` does
 everything else, once. Adding a fifth provider means writing a request builder and
 a parser, and touching no transport code at all.
 
+Only the transport is async. `request` and `parse` are ordinary functions, because
+neither waits for anything: one builds a dict, the other reads one. Making them
+async would spread `await` across the codebase in exchange for nothing, and the
+useful discipline of async is being able to point at every place that actually
+blocks. Here there is exactly one, and it is the network.
+
 Written against raw HTTP rather than each provider's official SDK on purpose. The
 whole point of the arena is comparing providers, and four libraries each making
 their own decisions about retries, buffering and timeouts would quietly distort
@@ -16,7 +22,7 @@ exactly the thing being measured.
 """
 
 import json
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -57,20 +63,26 @@ class Provider(Protocol):
         ...
 
 
-def stream_events(
+async def stream_events(
     provider: Provider,
     prompt: str,
     model: str | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     timeout: float = DEFAULT_TIMEOUT,
-) -> Iterator[StreamEvent]:
-    """Yield text as it arrives, plus token usage whenever the provider reports it."""
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> AsyncIterator[StreamEvent]:
+    """Yield text as it arrives, plus token usage whenever the provider reports it.
+
+    `transport` exists so tests can hand in a fake network. It is the difference
+    between being able to test that four calls really do overlap and having to take
+    it on faith.
+    """
     request = provider.request(model or provider.default_model, prompt, max_tokens)
 
     # client.stream() rather than client.post(): post() waits for the whole body
     # before returning anything, which would defeat the exercise entirely.
-    with (
-        httpx.Client(timeout=timeout) as client,
+    async with (
+        httpx.AsyncClient(timeout=timeout, transport=transport) as client,
         client.stream(
             "POST", request.url, headers=request.headers, json=request.payload
         ) as response,
@@ -79,17 +91,18 @@ def stream_events(
             # The body has not been read yet on a streaming response, so ask for it
             # explicitly before touching .text, or you get a confusing error about
             # accessing content on a stream.
-            response.read()
+            await response.aread()
             raise httpx.HTTPStatusError(
                 f"{response.status_code} from {provider.name}: {response.text}",
                 request=response.request,
                 response=response,
             )
 
-        for line in response.iter_lines():
+        async for line in response.aiter_lines():
             chunk = decode(line)
             if chunk is not None:
-                yield from provider.parse(chunk)
+                for event in provider.parse(chunk):
+                    yield event
 
 
 def decode(line: str) -> dict[str, Any] | None:
@@ -123,17 +136,18 @@ def decode(line: str) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def collect(
+async def collect(
     provider: Provider,
     prompt: str,
     model: str | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     timeout: float = DEFAULT_TIMEOUT,
+    transport: httpx.AsyncBaseTransport | None = None,
 ) -> tuple[str, Usage]:
     """Run a prompt to completion and return the full text with final token counts."""
     parts: list[str] = []
     usage = Usage()
-    for event in stream_events(provider, prompt, model, max_tokens, timeout):
+    async for event in stream_events(provider, prompt, model, max_tokens, timeout, transport):
         if isinstance(event, str):
             parts.append(event)
         else:
