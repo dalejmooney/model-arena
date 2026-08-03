@@ -4,10 +4,13 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "httpx>=0.28.1",
+    "python-dotenv>=1.2.2",
+]
 
 [project.scripts]
-model-arena = "model_arena:main"
+model-arena = "model_arena.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.12.1,<0.13.0"]

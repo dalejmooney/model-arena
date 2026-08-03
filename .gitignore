@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Secrets. Added before any .env existed, deliberately: git only ignores files
+# it is not already tracking, so ignoring after a commit does nothing.
+.env
+.env.*
+!.env.example
