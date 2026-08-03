@@ -71,6 +71,32 @@ That last one drove a design decision. Summing usage as it arrives is right for
 Anthropic and OpenAI and would triple-count Gemini, so the merge rule is "take the
 newest value" and lives in `events.py` rather than in any one provider.
 
+### Hidden reasoning makes cheap-looking answers expensive
+
+All four were asked to name one colour in one word. All four answered "Blue". The
+output token counts were not close:
+
+| Provider | Model | In | Out |
+|---|---|---:|---:|
+| anthropic | claude-sonnet-5 | 15 | 5 |
+| openai | gpt-5 | 13 | 74 |
+| gemini | gemini-3.6-flash | 7 | 127 |
+| groq | llama-3.3-70b-versatile | 42 | 2 |
+
+Same four-letter answer, twenty-five times the output cost between the cheapest and
+the dearest, entirely because of reasoning nobody asked for and nobody sees.
+
+Gemini reports that split, and reporting it is the trap. One call came back with
+`candidatesTokenCount: 1` and `thoughtsTokenCount: 168`. A cost tracker reading the
+obvious field would have recorded one output token for a call billed at a hundred
+and sixty nine, and nothing in the response would have looked wrong. So the reading
+is deliberately `candidates + thoughts`, and there is a test pinning it to those
+real numbers.
+
+The general point, which is why this project exists: a per-token price is not a
+price. What a model actually costs depends on how much it thinks before answering,
+that varies per call, and at least two of these four will quietly not tell you.
+
 ## Running it
 
 Requires [uv](https://docs.astral.sh/uv/). It handles the Python version, the virtual environment and the dependencies.

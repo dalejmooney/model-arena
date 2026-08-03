@@ -168,9 +168,10 @@ GEMINI_FINISH = (
     '"usageMetadata": {"promptTokenCount": 8, "candidatesTokenCount": 12, '
     '"totalTokenCount": 20}}'
 )
+# Real, from a gemini-3.6-flash call whose entire answer was the word "Blue".
 GEMINI_THINKING = (
-    'data: {"usageMetadata": {"promptTokenCount": 8, "candidatesTokenCount": 12, '
-    '"thoughtsTokenCount": 30, "totalTokenCount": 50}}'
+    'data: {"usageMetadata": {"promptTokenCount": 7, "candidatesTokenCount": 1, '
+    '"thoughtsTokenCount": 168, "totalTokenCount": 176, "serviceTier": "standard"}}'
 )
 
 
@@ -185,10 +186,13 @@ def test_gemini_candidate_with_no_content_is_not_a_failure() -> None:
 def test_gemini_reasoning_tokens_count_as_output() -> None:
     """They are billed as output but left out of candidatesTokenCount.
 
-    Reading only the obvious field undercounts a thinking model's cost, which is
-    exactly the sort of quiet wrongness that makes a comparison worthless.
+    These are real numbers off a real call, and they are the reason this test
+    exists: the visible answer was one word, so the obvious field says 1, while
+    the call was actually billed for 169. Reading the obvious field would have
+    under-reported the cost of a thinking model by more than a hundredfold, and
+    nothing about the response would have looked wrong.
     """
-    assert events(Gemini(), GEMINI_THINKING) == [Usage(input_tokens=8, output_tokens=42)]
+    assert events(Gemini(), GEMINI_THINKING) == [Usage(input_tokens=7, output_tokens=169)]
 
 
 # ---- putting the halves together ---------------------------------------------

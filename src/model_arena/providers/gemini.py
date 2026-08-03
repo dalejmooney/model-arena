@@ -76,8 +76,10 @@ class Chunk(Wire):
 class Gemini:
     name = "gemini"
 
-    # Model ids date fast. Pass --model when comparing anything specific.
-    default_model = "gemini-2.5-flash"
+    # Model ids date fast, and Google retires them for new keys while still listing
+    # them: gemini-2.5-flash was the default here until it started 404ing with "no
+    # longer available to new users". Pass --model when comparing anything specific.
+    default_model = "gemini-3.6-flash"
 
     def request(self, model: str, prompt: str, max_tokens: int) -> Request:
         return Request(
