@@ -1,0 +1,47 @@
+[project]
+name = "model-arena"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+model-arena = "model_arena:main"
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.0",
+    "pytest>=9.1.1",
+    "ruff>=0.16.1",
+]
+
+# ---- tooling ----------------------------------------------------------------
+# All three tools read this one file. That is the modern convention and it is
+# why pyproject.toml replaced setup.cfg, .flake8, mypy.ini, pytest.ini and friends.
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Ruff bundles what used to be five separate tools. Each code is a rule family:
+#   E  pycodestyle   style errors (the old flake8 core)
+#   F  pyflakes      real mistakes: unused imports, undefined names
+#   I  isort         import ordering, so diffs stop arguing about it
+#   UP pyupgrade     rewrites old syntax for our target Python
+#   B  bugbear       bug-shaped patterns, e.g. mutable default arguments
+#   SIM flake8-simplify   needlessly convoluted code
+#   ANN flake8-annotations requires type hints, which is what makes mypy useful
+select = ["E", "F", "I", "UP", "B", "SIM", "ANN"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
