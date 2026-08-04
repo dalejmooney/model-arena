@@ -85,13 +85,51 @@ def test_anthropic_unknown_events_are_ignored_silently(line: str) -> None:
     assert events(Anthropic(), line) == []
 
 
-def test_an_event_we_claim_to_understand_but_cannot_parse_is_loud() -> None:
-    """The other half of the rule above.
+@pytest.mark.parametrize(
+    "line",
+    [
+        # Extended thinking sends its reasoning and the signature that seals it
+        # through the same event name as visible text.
+        'data: {"type": "content_block_delta", "index": 0, '
+        '"delta": {"type": "thinking_delta", "thinking": "Let me work through"}}',
+        'data: {"type": "content_block_delta", "index": 0, '
+        '"delta": {"type": "signature_delta", "signature": "hzT80D3RuN2JOd++c3zxgB"}}',
+        # Tool use streams its arguments the same way.
+        'data: {"type": "content_block_delta", "index": 1, '
+        '"delta": {"type": "input_json_delta", "partial_json": "{\\"a\\":"}}',
+    ],
+)
+def test_content_block_deltas_that_are_not_text_are_ignored(line: str) -> None:
+    """Regression: a content_block_delta is not always text.
 
-    Ignoring unknown events is correct. Ignoring a known event whose contents are
-    wrong is not, because that is how text silently goes missing from an answer and
-    nobody finds out. If content_block_delta arrives without text, we want to know.
+    The first version of this parser validated every content_block_delta against a
+    shape requiring `delta.text`, on the reasoning that Anthropic names its events
+    so a named event missing its payload is broken. The reasoning was right and the
+    discriminator was wrong: the event name says where the data sits, the delta's
+    own type says what it is.
+
+    Found by eval-kit asking Sonnet 5 forty questions. Thinking is on by default,
+    so a signature_delta arrived, failed validation, and killed the call: 13 of 40
+    answers lost to it, and every one of them had already been paid for.
     """
+    assert events(Anthropic(), line) == []
+
+
+def test_a_text_delta_without_text_is_still_loud() -> None:
+    """The rule the regression above must not have weakened.
+
+    Ignoring a delta kind we do not read is correct. Ignoring a text_delta whose
+    text is missing is not, because that is how text silently goes missing from an
+    answer and nobody finds out.
+    """
+    with pytest.raises(ValidationError):
+        events(
+            Anthropic(),
+            'data: {"type": "content_block_delta", "delta": {"type": "text_delta"}}',
+        )
+
+
+def test_a_delta_with_no_type_at_all_is_loud() -> None:
     with pytest.raises(ValidationError):
         events(Anthropic(), 'data: {"type": "content_block_delta", "delta": {}}')
 

@@ -22,12 +22,32 @@ API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
 
 
-class TextDelta(Strict):
+# A content_block_delta does not always carry text. With extended thinking on, the
+# same event name also carries `thinking_delta` and `signature_delta`, and tool use
+# carries `input_json_delta`. None of those have a `text` field.
+TEXT_DELTA = "text_delta"
+
+
+class AnyDelta(Strict):
+    """Enough of a delta to tell what kind it is."""
+
+    type: str
+
+
+class TextDelta(AnyDelta):
+    """The one kind that carries generated text."""
+
     text: str
 
 
 class ContentBlockDelta(Strict):
-    """The event that actually carries generated text."""
+    """Any content block delta, of whatever kind."""
+
+    delta: AnyDelta
+
+
+class TextContentBlockDelta(Strict):
+    """A content block delta already known to be a text one."""
 
     delta: TextDelta
 
@@ -71,7 +91,13 @@ class Anthropic:
     def parse(self, chunk: dict[str, Any]) -> Iterator[StreamEvent]:
         match chunk.get("type"):
             case "content_block_delta":
-                yield ContentBlockDelta.model_validate(chunk).delta.text
+                # Checked on the delta's own type first. The strictness belongs on
+                # the delta kind that promises text, not on every delta that
+                # happens to share an event name: a `text_delta` with no text is
+                # still broken and still raises, while a `signature_delta` is
+                # simply not ours to read.
+                if ContentBlockDelta.model_validate(chunk).delta.type == TEXT_DELTA:
+                    yield TextContentBlockDelta.model_validate(chunk).delta.text
             case "message_start":
                 yield MessageStart.model_validate(chunk).message.usage
             case "message_delta":

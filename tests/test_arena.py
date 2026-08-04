@@ -24,7 +24,7 @@ KEYS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY"]
 BODIES = {
     "anthropic": (
         b'data: {"type":"message_start","message":{"usage":{"input_tokens":10}}}\n\n'
-        b'data: {"type":"content_block_delta","delta":{"text":"Blue"}}\n\n'
+        b'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Blue"}}\n\n'
         b'data: {"type":"message_delta","usage":{"output_tokens":2}}\n\n'
     ),
     "openai": (
